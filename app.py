@@ -4,15 +4,32 @@ import MySQLdb.cursors
 from datetime import date
 import pickle
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_mail import Mail, Message
+from dotenv import load_dotenv
+import os
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'
+
+
+load_dotenv()
+
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
+
+app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+app.config['MAIL_PORT'] = 587
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_DEFAULT_SENDER'] = 'atharvdivekar80@gmail.com'
+
+mail = Mail(app)
+
+app.secret_key = os.getenv('SECRET_KEY')
 
 # MySQL Config
-app.config['MYSQL_HOST'] = 'localhost'
-app.config['MYSQL_USER'] = 'lord'
-app.config['MYSQL_PASSWORD'] = '2005'
-app.config['MYSQL_DB'] = 'fitness_ai'
+app.config['MYSQL_HOST'] = os.getenv('DB_HOST')
+app.config['MYSQL_USER'] = os.getenv('DB_USER')
+app.config['MYSQL_PASSWORD'] = os.getenv('DB_PASS')
+app.config['MYSQL_DB'] = os.getenv('DB_NAME')
 
 
 # Load your trained model
@@ -73,26 +90,47 @@ def dashboard():
         user_id = session['id']
 
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+
+        # Get goal
         cursor.execute('SELECT goal FROM users WHERE id = %s', [user_id])
         user = cursor.fetchone()
         goal = user['goal']
 
+        # Get workouts
         cursor.execute('SELECT name FROM workouts WHERE goal = %s', [goal])
         workouts = [row['name'] for row in cursor.fetchall()]
 
+        # Get meals
         cursor.execute('SELECT name FROM meals WHERE goal = %s', [goal])
         meals = [row['name'] for row in cursor.fetchall()]
 
-        # Get latest recommendation if any
+        # Get latest recommendation
         cursor.execute('SELECT recommendation FROM recommendations WHERE user_id = %s ORDER BY date DESC LIMIT 1', [user_id])
         rec = cursor.fetchone()
         recommendation = rec['recommendation'] if rec else 'No recommendation yet.'
 
+        # Get progress history (date, weight, calories)
+        cursor.execute('SELECT date, weight, calories FROM progress WHERE user_id = %s ORDER BY date', [user_id])
+        rows = cursor.fetchall()
+        dates = [str(row['date']) for row in rows]
+        weights = [row['weight'] for row in rows]
+        calories = [row['calories'] for row in rows]
+
         cursor.close()
 
-        return render_template('dashboard.html', name=name, workouts=workouts, meals=meals, recommendation=recommendation)
+        return render_template(
+            'dashboard.html',
+            name=name,
+            workouts=workouts,
+            meals=meals,
+            recommendation=recommendation,
+            dates=dates,
+            weights=weights,
+            calories=calories
+        )
 
     return redirect(url_for('login'))
+
 
 
 @app.route('/progress', methods=['POST'])
@@ -140,6 +178,108 @@ def progress():
 
         return render_template('progress_result.html', result=result)
     return redirect(url_for('login'))
+
+@app.route('/profile', methods=['GET', 'POST'])
+def profile():
+    if 'loggedin' not in session:
+        return redirect(url_for('login'))
+
+    user_id = session['id']
+    msg = ''
+
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+
+    if request.method == 'POST':
+        name = request.form['name']
+        age = request.form['age']
+        gender = request.form['gender']
+        height = request.form['height']
+        weight = request.form['weight']
+        goal = request.form['goal']
+
+        cursor.execute('''
+            UPDATE users
+            SET name = %s, age = %s, gender = %s, height = %s, weight = %s, goal = %s
+            WHERE id = %s
+        ''', (name, age, gender, height, weight, goal, user_id))
+
+        mysql.connection.commit()
+        msg = '✅ Profile updated successfully!'
+    
+    # Load current user data
+    cursor.execute('SELECT * FROM users WHERE id = %s', [user_id])
+    user = cursor.fetchone()
+
+    cursor.close()
+
+    return render_template('profile.html', user=user, msg=msg)
+
+@app.route('/send_reminders')
+def send_reminders():
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+
+    # Get all users EXCEPT the sender email
+    cursor.execute('SELECT email, name FROM users WHERE email != %s', [app.config['MAIL_DEFAULT_SENDER']])
+    users = cursor.fetchall()
+    cursor.close()
+
+    for user in users:
+        print(f"Sending to: {user['email']}")
+        msg = Message(
+            'Daily Progress Reminder',
+            recipients=[user['email']],
+            body=f"Hi {user['name']},\n\nDon't forget to log your fitness progress today!\n\nStay healthy! 🚀"
+        )
+        mail.send(msg)
+
+    return '✅ Reminders sent!'
+
+@app.route('/change_password', methods=['GET', 'POST'])
+def change_password():
+    if 'loggedin' not in session:
+        return redirect(url_for('login'))
+
+    msg = ''
+    if request.method == 'POST':
+        current = request.form['current']
+        new = request.form['new']
+        confirm = request.form['confirm']
+
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute('SELECT password FROM users WHERE id = %s', [session['id']])
+        user = cursor.fetchone()
+
+        if not check_password_hash(user['password'], current):
+            msg = '❌ Current password incorrect!'
+        elif new != confirm:
+            msg = '❌ New passwords do not match!'
+        else:
+            hashed = generate_password_hash(new)
+            cursor.execute('UPDATE users SET password = %s WHERE id = %s', (hashed, session['id']))
+            mysql.connection.commit()
+            msg = '✅ Password changed successfully!'
+
+        cursor.close()
+
+    return render_template('change_password.html', msg=msg)
+
+@app.route('/admin')
+def admin_dashboard():
+    if 'loggedin' not in session:
+        return redirect(url_for('login'))
+
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT is_admin FROM users WHERE id = %s', [session['id']])
+    user = cursor.fetchone()
+
+    if not user or not user['is_admin']:
+        return '❌ Access denied.'
+
+    cursor.execute('SELECT id, name, email, goal, age, gender FROM users')
+    all_users = cursor.fetchall()
+    cursor.close()
+
+    return render_template('admin_dashboard.html', users=all_users)
 
 
 @app.route('/logout')
