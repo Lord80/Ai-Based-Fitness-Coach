@@ -7,15 +7,17 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_mail import Mail, Message
 from dotenv import load_dotenv
 import os
+from prophet import Prophet
+import plotly.graph_objs as go
+import plotly.offline as pyo
 
 app = Flask(__name__)
 
-
 load_dotenv()
 
+# Mail config
 app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
-
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
@@ -25,17 +27,16 @@ mail = Mail(app)
 
 app.secret_key = os.getenv('SECRET_KEY')
 
-# MySQL Config
+# MySQL config
 app.config['MYSQL_HOST'] = os.getenv('DB_HOST')
 app.config['MYSQL_USER'] = os.getenv('DB_USER')
 app.config['MYSQL_PASSWORD'] = os.getenv('DB_PASS')
 app.config['MYSQL_DB'] = os.getenv('DB_NAME')
 
-
-# Load your trained model
-model = pickle.load(open('progress_model.pkl', 'rb'))
-
 mysql = MySQL(app)
+
+# ✅ Load your advanced model
+advanced_model = pickle.load(open('advanced_model.pkl', 'rb'))
 
 @app.route('/')
 def index():
@@ -47,19 +48,37 @@ def register():
         name = request.form['name']
         email = request.form['email']
         password = generate_password_hash(request.form['password'])
-        age = request.form['age']
+        age = int(request.form['age'])
         gender = request.form['gender']
-        height = request.form['height']
-        weight = request.form['weight']
+        height = float(request.form['height'])
+        weight = float(request.form['weight'])
         goal = request.form['goal']
+        activity_level = float(request.form['activity_level'])
+        target_weight = float(request.form['target_weight'])
+        target_date = request.form['target_date']
+
+        # ✅ Calculate BMR
+        if gender.lower() == 'male':
+            bmr = 10 * weight + 6.25 * height - 5 * age + 5
+        else:
+            bmr = 10 * weight + 6.25 * height - 5 * age - 161
+
+        bmr *= activity_level
 
         cursor = mysql.connection.cursor()
-        cursor.execute('INSERT INTO users (name, email, password, age, gender, height, weight, goal) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)',
-                       (name, email, password, age, gender, height, weight, goal))
+        cursor.execute(
+            '''INSERT INTO users 
+               (name, email, password, age, gender, height, weight, goal, 
+                activity_level, target_weight, target_date, bmr) 
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''',
+            (name, email, password, age, gender, height, weight, goal,
+             activity_level, target_weight, target_date, bmr)
+        )
         mysql.connection.commit()
         cursor.close()
         return redirect(url_for('login'))
     return render_template('register.html')
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -80,8 +99,6 @@ def login():
         else:
             msg = 'Incorrect username/email or password!'
     return render_template('login.html', msg=msg)
-
-
 
 @app.route('/dashboard')
 def dashboard():
@@ -131,40 +148,55 @@ def dashboard():
 
     return redirect(url_for('login'))
 
-
-
 @app.route('/progress', methods=['POST'])
 def progress():
     if 'loggedin' in session:
         user_id = session['id']
         weight = float(request.form['weight'])
         calories = int(request.form['calories'])
+        protein = float(request.form['protein'])
+        carbs = float(request.form['carbs'])
+        fat = float(request.form['fat'])
+        workout_type = request.form['workout_type']
+        duration = int(request.form['duration'])
+        intensity = request.form['intensity']
+        steps = int(request.form['steps'])
         notes = request.form['notes']
 
         today = date.today()
 
+        # Pull user info
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('SELECT goal FROM users WHERE id = %s', [user_id])
+        cursor.execute('SELECT age, gender, height FROM users WHERE id = %s', [user_id])
         user = cursor.fetchone()
-        goal = user['goal'].strip().lower()
-        goal_num = 0 if 'loss' in goal else 1
 
-        prediction = model.predict([[weight, calories, goal_num]])[0]
+        gender_num = 1 if user['gender'].lower() == 'male' else 0
 
-        if prediction == 1:
-            result = "✅ You’re on track! Keep it up!"
-        else:
-            result = "⚠️ You might need to adjust: Try more exercise or tweak calories."
+        X_input = [[
+            user['age'],
+            gender_num,
+            user['height'],
+            weight,
+            calories,
+            protein,
+            carbs,
+            fat,
+            duration,
+            steps
+        ]]
 
-            # Optional: Auto-change goal in DB? Not recommended yet, better to recommend.
-            # Example:
-            # new_goal = 'Weight Loss' if goal_num == 1 else 'Weight Gain'
-            # cursor.execute('UPDATE users SET goal = %s WHERE id = %s', (new_goal, user_id))
+        # Load model & predict
+        prediction = advanced_model.predict(X_input)[0]
+        prediction = round(prediction, 2)
+
+        result = f'✅ Estimated next week weight: {prediction} kg'
 
         # Save progress
         cursor.execute(
-            'INSERT INTO progress (user_id, date, weight, calories, notes) VALUES (%s, %s, %s, %s, %s)',
-            (user_id, today, weight, calories, notes)
+            '''INSERT INTO progress 
+               (user_id, date, weight, calories, protein, carbs, fat, workout_type, duration, intensity, steps, notes)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''',
+            (user_id, today, weight, calories, protein, carbs, fat, workout_type, duration, intensity, steps, notes)
         )
 
         # Save recommendation
@@ -179,6 +211,7 @@ def progress():
         return render_template('progress_result.html', result=result)
     return redirect(url_for('login'))
 
+
 @app.route('/profile', methods=['GET', 'POST'])
 def profile():
     if 'loggedin' not in session:
@@ -191,21 +224,33 @@ def profile():
 
     if request.method == 'POST':
         name = request.form['name']
-        age = request.form['age']
+        age = int(request.form['age'])
         gender = request.form['gender']
-        height = request.form['height']
-        weight = request.form['weight']
+        height = float(request.form['height'])
+        weight = float(request.form['weight'])
         goal = request.form['goal']
+        activity_level = float(request.form['activity_level'])
+        target_weight = float(request.form['target_weight'])
+        target_date = request.form['target_date']
+
+        # ✅ Recalculate BMR (Mifflin-St Jeor)
+        if gender.lower() == 'male':
+            bmr = 10 * weight + 6.25 * height - 5 * age + 5
+        else:
+            bmr = 10 * weight + 6.25 * height - 5 * age - 161
+
+        bmr *= activity_level
 
         cursor.execute('''
             UPDATE users
-            SET name = %s, age = %s, gender = %s, height = %s, weight = %s, goal = %s
+            SET name = %s, age = %s, gender = %s, height = %s, weight = %s,
+                goal = %s, activity_level = %s, target_weight = %s, target_date = %s, bmr = %s
             WHERE id = %s
-        ''', (name, age, gender, height, weight, goal, user_id))
+        ''', (name, age, gender, height, weight, goal, activity_level, target_weight, target_date, bmr, user_id))
 
         mysql.connection.commit()
         msg = '✅ Profile updated successfully!'
-    
+
     # Load current user data
     cursor.execute('SELECT * FROM users WHERE id = %s', [user_id])
     user = cursor.fetchone()
@@ -214,17 +259,16 @@ def profile():
 
     return render_template('profile.html', user=user, msg=msg)
 
+
 @app.route('/send_reminders')
 def send_reminders():
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
 
-    # Get all users EXCEPT the sender email
     cursor.execute('SELECT email, name FROM users WHERE email != %s', [app.config['MAIL_DEFAULT_SENDER']])
     users = cursor.fetchall()
     cursor.close()
 
     for user in users:
-        print(f"Sending to: {user['email']}")
         msg = Message(
             'Daily Progress Reminder',
             recipients=[user['email']],
@@ -281,13 +325,61 @@ def admin_dashboard():
 
     return render_template('admin_dashboard.html', users=all_users)
 
-
 @app.route('/logout')
 def logout():
     session.pop('loggedin', None)
     session.pop('id', None)
     session.pop('name', None)
     return redirect(url_for('index'))
+
+@app.route('/forecast')
+def forecast():
+    if 'loggedin' not in session:
+        return redirect(url_for('login'))
+
+    user_id = session['id']
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute(
+        'SELECT date, weight FROM progress WHERE user_id = %s ORDER BY date',
+        [user_id]
+    )
+    rows = cursor.fetchall()
+    cursor.close()
+
+    if not rows:
+        return "❌ Not enough data to forecast!"
+
+    # Prepare DataFrame
+    import pandas as pd
+    df = pd.DataFrame(rows)
+    df.rename(columns={'date': 'ds', 'weight': 'y'}, inplace=True)
+
+    # Fit Prophet
+    model = Prophet()
+    model.fit(df)
+
+    # Future dataframe
+    future = model.make_future_dataframe(periods=30)
+    forecast = model.predict(future)
+
+    # Create Plotly chart
+    actual_trace = go.Scatter(
+        x=df['ds'], y=df['y'], mode='markers+lines', name='Actual Weight'
+    )
+    forecast_trace = go.Scatter(
+        x=forecast['ds'], y=forecast['yhat'], mode='lines', name='Forecast'
+    )
+
+    layout = go.Layout(
+        title='Weight Forecast (Next 30 Days)',
+        xaxis={'title': 'Date'},
+        yaxis={'title': 'Weight (kg)'}
+    )
+
+    fig = go.Figure(data=[actual_trace, forecast_trace], layout=layout)
+    plot_div = pyo.plot(fig, output_type='div')
+
+    return render_template('forecast.html', plot_div=plot_div)
 
 if __name__ == '__main__':
     app.run(debug=True)

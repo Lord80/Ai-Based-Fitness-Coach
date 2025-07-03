@@ -1,22 +1,57 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8" />
   <title>Register</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
 <body>
   <h1>Register</h1>
-  <form method="post">
-    <input name="name" placeholder="Name" required><br>
-    <input name="email" placeholder="Email" required><br>
-    <input name="password" type="password" placeholder="Password" required><br>
-    <input name="age" type="number" placeholder="Age" required><br>
-    <input name="gender" placeholder="Gender" required><br>
-    <input name="height" placeholder="Height (cm)" required><br>
-    <input name="weight" placeholder="Weight (kg)" required><br>
-    <input name="goal" placeholder="Goal (Weight Loss/Weight Gain)" required><br>
+  <form method="POST">
+    <label>Name:</label><br>
+    <input type="text" name="name" required><br>
+
+    <label>Email:</label><br>
+    <input type="email" name="email" required><br>
+
+    <label>Password:</label><br>
+    <input type="password" name="password" required><br>
+
+    <label>Age:</label><br>
+    <input type="number" name="age" required><br>
+
+    <label>Gender:</label><br>
+    <select name="gender" required>
+      <option value="Male">Male</option>
+      <option value="Female">Female</option>
+    </select><br>
+
+    <label>Height (cm):</label><br>
+    <input type="number" name="height" required><br>
+
+    <label>Weight (kg):</label><br>
+    <input type="number" name="weight" required><br>
+
+    <label>Goal:</label><br>
+    <input type="text" name="goal" required><br>
+
+    <label>Activity Level:</label><br>
+    <select name="activity_level" required>
+      <option value="1.2">Sedentary</option>
+      <option value="1.375">Lightly Active</option>
+      <option value="1.55">Moderately Active</option>
+      <option value="1.725">Very Active</option>
+      <option value="1.9">Extra Active</option>
+    </select><br>
+
+    <label>Target Weight (kg):</label><br>
+    <input type="number" name="target_weight" required><br>
+
+    <label>Target Date:</label><br>
+    <input type="date" name="target_date" required><br>
+
     <button type="submit">Register</button>
   </form>
-  <p>Already have an account? <a href="{{ url_for('login') }}">Login</a></p>
+
+  <p>Already have an account? <a href="{{ url_for('login') }}">Login here</a></p>
 </body>
 </html>

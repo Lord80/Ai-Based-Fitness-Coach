@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Weight Forecast</title>
+</head>
+<body>
+  <h1>📈 Your 30-Day Weight Forecast</h1>
+  {{ plot_div | safe }}
+
+  <a href="{{ url_for('dashboard') }}">⬅️ Back to Dashboard</a>
+</body>
+</html>

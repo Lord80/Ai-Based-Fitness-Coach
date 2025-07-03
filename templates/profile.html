@@ -19,7 +19,10 @@
     <input name="age" type="number" value="{{ user['age'] }}"><br>
 
     <label>Gender:</label><br>
-    <input name="gender" type="text" value="{{ user['gender'] }}"><br>
+    <select name="gender">
+      <option value="Male" {% if user['gender'].lower() == 'male' %}selected{% endif %}>Male</option>
+      <option value="Female" {% if user['gender'].lower() == 'female' %}selected{% endif %}>Female</option>
+    </select><br>
 
     <label>Height (cm):</label><br>
     <input name="height" type="number" step="0.1" value="{{ user['height'] }}"><br>
@@ -31,7 +34,22 @@
     <select name="goal">
       <option value="Weight Loss" {% if 'loss' in user['goal'].lower() %}selected{% endif %}>Weight Loss</option>
       <option value="Weight Gain" {% if 'gain' in user['goal'].lower() %}selected{% endif %}>Weight Gain</option>
-    </select><br><br>
+    </select><br>
+
+    <label>Activity Level:</label><br>
+    <select name="activity_level">
+      <option value="1.2" {% if user['activity_level'] == 1.2 %}selected{% endif %}>Sedentary</option>
+      <option value="1.375" {% if user['activity_level'] == 1.375 %}selected{% endif %}>Lightly Active</option>
+      <option value="1.55" {% if user['activity_level'] == 1.55 %}selected{% endif %}>Moderately Active</option>
+      <option value="1.725" {% if user['activity_level'] == 1.725 %}selected{% endif %}>Very Active</option>
+      <option value="1.9" {% if user['activity_level'] == 1.9 %}selected{% endif %}>Extra Active</option>
+    </select><br>
+
+    <label>Target Weight (kg):</label><br>
+    <input name="target_weight" type="number" value="{{ user['target_weight'] }}"><br>
+
+    <label>Target Date:</label><br>
+    <input name="target_date" type="date" value="{{ user['target_date'] }}"><br><br>
 
     <button type="submit">Save Changes</button>
   </form>

@@ -1,99 +1,106 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8" />
   <title>Dashboard</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-  <!-- 📌 Chart.js CDN goes in HEAD -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <h1>Welcome, {{ name }}!</h1>
 
-  <h2>Your Suggested Workouts:</h2>
+  <h2>Recommended Workouts</h2>
   <ul>
     {% for workout in workouts %}
       <li>{{ workout }}</li>
     {% endfor %}
   </ul>
 
-  <h2>Your Suggested Meals:</h2>
+  <h2>Recommended Meals</h2>
   <ul>
     {% for meal in meals %}
       <li>{{ meal }}</li>
     {% endfor %}
   </ul>
 
-  <h2>Latest AI Recommendation:</h2>
+  <h2>Latest Recommendation</h2>
   <p>{{ recommendation }}</p>
 
-  <h2>Update Your Progress</h2>
-  <form method="post" action="{{ url_for('progress') }}">
-    <label>Today's Weight (kg):</label><br>
-    <input name="weight" type="number" step="0.1" required><br>
-    <label>Calories Eaten:</label><br>
-    <input name="calories" type="number" required><br>
+  <h2>Log Your Daily Progress</h2>
+  <form action="{{ url_for('progress') }}" method="post">
+    <label>Weight (kg):</label><br>
+    <input type="number" step="0.1" name="weight" required><br>
+
+    <label>Calories:</label><br>
+    <input type="number" name="calories" required><br>
+
+    <label>Protein (g):</label><br>
+    <input type="number" step="0.1" name="protein" required><br>
+
+    <label>Carbs (g):</label><br>
+    <input type="number" step="0.1" name="carbs" required><br>
+
+    <label>Fat (g):</label><br>
+    <input type="number" step="0.1" name="fat" required><br>
+
+    <label>Workout Type:</label><br>
+    <input type="text" name="workout_type"><br>
+
+    <label>Duration (minutes):</label><br>
+    <input type="number" name="duration"><br>
+
+    <label>Intensity:</label><br>
+    <input type="text" name="intensity"><br>
+
+    <label>Steps:</label><br>
+    <input type="number" name="steps"><br>
+
     <label>Notes:</label><br>
     <textarea name="notes"></textarea><br>
+
     <button type="submit">Submit Progress</button>
   </form>
 
-  <h2>Your Progress</h2>
-  <canvas id="weightChart" width="400" height="200"></canvas>
-  <canvas id="caloriesChart" width="400" height="200"></canvas>
+  <h2>Progress Chart</h2>
+  <canvas id="progressChart" width="600" height="400"></canvas>
 
-  <br><br>
-  <a href="{{ url_for('profile') }}">Edit Profile</a>
-  <br><br>
-  <a href="{{ url_for('logout') }}">Logout</a>
+  <br> <br>
+  {% if prediction %}
+  <p>{{ prediction }}</p>
+{% endif %}
 
-  <!-- 📌 Chart.js config goes just before </body> -->
-  <!-- ✅ Put this just before </body> -->
-<script>
-  // ✅ Declare once, from Flask context, always use tojson filter!
-  const dates = {{ dates | tojson | safe }};
-  const weights = {{ weights | tojson | safe }};
-  const calories = {{ calories | tojson | safe }};
+  <p><a href="{{ url_for('forecast') }}">View Weight Forecast 📈</a></p>
 
-  console.log("Dates:", dates);
-  console.log("Weights:", weights);
-  console.log("Calories:", calories);
+  <script>
+    const ctx = document.getElementById('progressChart').getContext('2d');
+    const dates = {{ dates|tojson }};
+    const weights = {{ weights|tojson }};
+    const calories = {{ calories|tojson }};
 
-  // ✅ Weight Chart
-  const ctxW = document.getElementById('weightChart').getContext('2d');
-  new Chart(ctxW, {
-    type: 'line',
-    data: {
-      labels: dates,
-      datasets: [{
-        label: 'Weight (kg)',
-        data: weights,
-        borderColor: 'blue',
-        fill: false,
-        tension: 0.1
-      }]
-    },
-    options: {
-      responsive: true
-    }
-  });
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: dates,
+        datasets: [
+          {
+            label: 'Weight (kg)',
+            data: weights,
+            borderColor: 'blue',
+            fill: false
+          },
+          {
+            label: 'Calories',
+            data: calories,
+            borderColor: 'red',
+            fill: false
+          }
+        ]
+      }
+    });
+  </script>
 
-  // ✅ Calories Chart
-  const ctxC = document.getElementById('caloriesChart').getContext('2d');
-  new Chart(ctxC, {
-    type: 'bar',
-    data: {
-      labels: dates,
-      datasets: [{
-        label: 'Calories',
-        data: calories,
-        backgroundColor: 'orange'
-      }]
-    },
-    options: {
-      responsive: true
-    }
-  });
-</script>
+  <p><a href="{{ url_for('profile') }}">Edit Profile</a> |
+     <a href="{{ url_for('change_password') }}">Change Password</a> |
+     <a href="{{ url_for('logout') }}">Logout</a></p>
 
 </body>
 </html>
